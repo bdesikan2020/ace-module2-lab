@@ -51,9 +51,15 @@ export function getUserProfile () {
 
     let username = user.username
 
+    if (username && (/[\r\n]/.test(username) || /^\s*[-=!]/.test(username))) {
+      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+      return
+    }
+
     if (username?.match(/#{(.*)}/) !== null && utils.isChallengeEnabled(challenges.usernameXssChallenge)) {
       req.app.locals.abused_ssti_bug = true
-      const code = username?.substring(2, username.length - 1)
+      const match = username?.match(/^#{(.*)}$/)
+      const code = match ? match[1] : null
       try {
         if (!code) {
           throw new Error('Username is null')
@@ -75,8 +81,12 @@ export function getUserProfile () {
         }
         username = eval(code) // eslint-disable-line no-eval
       } catch (err) {
-        username = '\\' + username
+        next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+        return
       }
+    } else if (username && /[#!][{\[]/.test(username)) {
+      next(new Error('Blocked illegal activity by ' + req.socket.remoteAddress))
+      return
     } else {
       username = '\\' + username
     }
@@ -85,7 +95,7 @@ export function getUserProfile () {
     const theme = themes[themeKey] || themes['bluegrey-lightgreen']
 
     if (username) {
-      template = template.replace(/_username_/g, username)
+      template = template.replace(/_username_/g, () => username)
     }
     template = template.replace(/_emailHash_/g, security.hash(user?.email))
     template = template.replace(/_title_/g, entities.encode(config.get<string>('application.name')))
